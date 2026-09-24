@@ -220,6 +220,8 @@ body{height:100dvh;display:flex;align-items:center}
   .actions button{padding:4px;font-size:9px}
   .status{display:none}
 }
+/* Keep palette shapes geometrically square inside wide mobile tiles. */
+.tile .shape:not(.color-placeholder){height:auto!important;aspect-ratio:1/1;flex:none}
 </style>
 </head>
 <body>
