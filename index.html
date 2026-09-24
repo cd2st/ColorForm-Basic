@@ -313,6 +313,7 @@ body{height:100dvh;display:flex;align-items:center}
     <div class="small" id="resultText"></div>
     <div class="small" id="elapsedTime"></div>
     <div class="code" id="code"></div>
+    <button class="new" id="backToPuzzleBtn">BACK TO PUZZLE</button>
     <button class="new" id="againBtn">PLAY AGAIN</button>
   </div>
 </div>
@@ -711,6 +712,20 @@ newGame();
     return `${parts.year}-${parts.month}-${parts.day}`;
   };
 
+  const displayDate = day => {
+    const [year,month,date] = day.split('-');
+    return `${month}/${date}/${year.slice(-2)}`;
+  };
+  const storageKey = day => `colorform.daily.${mode}.${day}`;
+  const loadDailySnapshot = day => {
+    try { return JSON.parse(localStorage.getItem(storageKey(day)) || 'null'); }
+    catch (e) { return null; }
+  };
+  const saveDailySnapshot = (day,snapshot) => {
+    try { localStorage.setItem(storageKey(day),JSON.stringify(snapshot)); }
+    catch (e) {}
+  };
+
   const indexFor = (day, size, offset) => {
     const [y,m,d] = day.split('-').map(Number);
     const n = Math.floor(Date.UTC(y,m-1,d) / 86400000);
@@ -748,6 +763,8 @@ newGame();
 
   let challengeDate = '', shareText = '', practiceMode = false, dailySnapshot = null;
   const againButton = document.getElementById('againBtn');
+  const backToPuzzleButton = document.getElementById('backToPuzzleBtn');
+  backToPuzzleButton.onclick = () => document.getElementById('modal').classList.remove('show');
 
   const shareButton = document.createElement('button');
   shareButton.type = 'button';
@@ -795,6 +812,14 @@ newGame();
     shareStatus.textContent = '';
     fallback.hidden = true;
     render();
+    const savedSnapshot = loadDailySnapshot(challengeDate);
+    if (savedSnapshot) {
+      dailySnapshot = savedSnapshot;
+      shareText = savedSnapshot.resultText;
+      returnToDailyResult();
+      status.textContent = 'Today’s challenge is already complete in this browser. Review it or play a random puzzle.';
+      return;
+    }
     status.textContent = 'Click a guess box, then choose a piece from the pool.';
   };
 
@@ -826,10 +851,11 @@ newGame();
       returnDailyButton.hidden = false;
       againButton.textContent = 'PLAY ANOTHER RANDOM';
     } else {
-      shareText = `ColorForm — ${label}\n${challengeDate} (Central time)\n`
+      shareText = `ColorForm — ${label}\n${displayDate(challengeDate)}\n`
         + `${win ? `Solved in ${guesses.length}/6 guesses` : 'Not solved in 6 guesses'}\n`
         + `Time: ${elapsed}`;
       dailySnapshot = {win,elapsed,resultText:shareText,secret:[...secret],guesses:guesses.map(row=>({g:[...row.g],fb:row.fb}))};
+      saveDailySnapshot(challengeDate,dailySnapshot);
       shareButton.hidden = false;
       returnDailyButton.hidden = true;
       againButton.textContent = 'PLAY RANDOM PUZZLE';
@@ -859,7 +885,7 @@ newGame();
   shareButton.onclick = async () => {
     shareStatus.textContent = '';
     fallback.hidden = true;
-    const resultToShare = shareText + '\nPuzzle: https://cd2st.github.io/ColorForm-Basic/';
+    const resultToShare = shareText + '\nPlay ColorForm: https://cd2st.github.io/ColorForm/';
 
     try {
       if (!navigator.clipboard) throw new Error('Clipboard unavailable');
