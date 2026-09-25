@@ -991,7 +991,7 @@ newGame();
   shareButton.onclick = async () => {
     shareStatus.textContent = '';
     fallback.hidden = true;
-    const resultToShare = shareText + '\n\nhttps://cd2st.github.io/ColorForm/';
+    const resultToShare = shareText + '\n\nhttps://cd2st.github.io/ColorForm/?share=2';
 
     try {
       if (!navigator.clipboard) throw new Error('Clipboard unavailable');
