@@ -241,7 +241,7 @@ body{height:100dvh;display:flex;align-items:center}
 }
 .actions .submit{background:linear-gradient(135deg,#20d8cf,#0798bd);border-color:#7ff5ec;color:#07151a;box-shadow:0 8px 20px #09bfd63d}
 .actions .submit:hover:not(:disabled){background:linear-gradient(135deg,#48e8df,#12afd0);border-color:#b2fff8}
-.undo-icon{display:inline-block;font-size:1.65em;line-height:0;vertical-align:-.12em;margin-right:.12em;font-weight:900}
+.undo-icon,.redo-icon{display:inline-block;font-size:1.65em;line-height:0;vertical-align:-.12em;margin-right:.12em;font-weight:900}
 </style>
 </head>
 <body>
@@ -262,7 +262,7 @@ body{height:100dvh;display:flex;align-items:center}
       <section class="pool">
         <h2>SELECT YOUR GUESS</h2>
         <div class="tiles" id="tiles"></div>
-        <div class="actions"><button id="undoBtn" disabled><span class="undo-icon" aria-hidden="true">↶</span> UNDO</button><button id="clearBtn">CLEAR GUESS</button><button class="submit" id="submitBtn" disabled>SUBMIT GUESS</button></div>
+        <div class="actions"><button id="undoBtn" disabled><span class="undo-icon" aria-hidden="true">↶</span> UNDO</button><button id="redoBtn" disabled><span class="redo-icon" aria-hidden="true">↷</span> REDO</button><button id="clearBtn">CLEAR GUESS</button><button class="submit" id="submitBtn" disabled>SUBMIT GUESS</button></div>
         <div class="status" id="status">Click four pieces from the pool to build your guess.</div>
       </section>
       <aside class="rules">
@@ -345,7 +345,7 @@ const pieces=[];
 colors.forEach(([color,hex])=>shapes.forEach(shape=>pieces.push({color,hex,shape})));
 const shapePlaceholders=shapes.map(shape=>({color:'any color',hex:'#4d535a',shape,placeholder:true,placeholderType:'shape'}));
 const colorPlaceholders=colors.map(([color,hex])=>({color,hex,shape:'color-placeholder',placeholder:true,placeholderType:'color'}));
-let secret=[], guesses=[], current=Array(4).fill(null), selectedSlot=null, dragFrom=null, lastDrop=0, startedAt=0, pausedAt=0, totalPausedMs=0, gameOver=false, undoStack=[];
+let secret=[], guesses=[], current=Array(4).fill(null), selectedSlot=null, dragFrom=null, lastDrop=0, startedAt=0, pausedAt=0, totalPausedMs=0, gameOver=false, undoStack=[], redoStack=[];
 const board=document.getElementById('board'), tiles=document.getElementById('tiles'), status=document.getElementById('status');
 const pauseButton=document.getElementById('pauseBtn'), pauseOverlay=document.getElementById('pauseOverlay'), resumeButton=document.getElementById('resumeBtn');
 const instructionsButton=document.getElementById('instructionsBtn'), instructionsModal=document.getElementById('instructionsModal'), closeInstructionsButton=document.getElementById('closeInstructionsBtn');
@@ -605,6 +605,7 @@ function submit(){
   current=Array(4).fill(null);
   selectedSlot=null;
   undoStack=[];
+  redoStack=[];
   render();
   if(fb.combo.every(x=>x==='black'))return endGame(true);
   if(guesses.length===6)return endGame(false);
@@ -661,18 +662,32 @@ function render(){
   for(let r=0;r<6;r++)board.appendChild(roundBlock(r));
   document.getElementById('submitBtn').disabled=current.some(x=>!x||x.placeholder);
   document.getElementById('undoBtn').disabled=undoStack.length===0;
+  document.getElementById('redoBtn').disabled=redoStack.length===0;
 }
 function recordUndo(){
   undoStack.push({current:[...current],selectedSlot});
   if(undoStack.length>50)undoStack.shift();
+  redoStack=[];
 }
 function undoGuess(){
   const previous=undoStack.pop();
   if(!previous)return;
+  redoStack.push({current:[...current],selectedSlot});
+  if(redoStack.length>50)redoStack.shift();
   current=[...previous.current];
   selectedSlot=previous.selectedSlot;
   render();
   status.textContent=undoStack.length?'Last change undone. You can undo again.':'Last change undone.';
+}
+function redoGuess(){
+  const next=redoStack.pop();
+  if(!next)return;
+  undoStack.push({current:[...current],selectedSlot});
+  if(undoStack.length>50)undoStack.shift();
+  current=[...next.current];
+  selectedSlot=next.selectedSlot;
+  render();
+  status.textContent=redoStack.length?'Change restored. You can redo again.':'Change restored.';
 }
 function newGame(){
   startedAt=Date.now();
@@ -682,6 +697,7 @@ function newGame(){
   current=Array(4).fill(null);
   selectedSlot=null;
   undoStack=[];
+  redoStack=[];
   document.getElementById('modal').classList.remove('show');
   render();
   status.textContent='Click a guess box, then choose a piece from the pool.';
@@ -708,6 +724,7 @@ function formatElapsed(milliseconds){
 }
 document.getElementById('submitBtn').onclick=submit;
 document.getElementById('undoBtn').onclick=undoGuess;
+document.getElementById('redoBtn').onclick=redoGuess;
 document.getElementById('clearBtn').onclick=clearGuess;
 document.getElementById('againBtn').onclick=newGame;
 pauseButton.onclick=pauseGame;
@@ -768,7 +785,7 @@ newGame();
     if (gameOver || !secret.length) return;
     try {
       localStorage.setItem(progressStorageKey,JSON.stringify({
-        version:1,challengeDate,practiceMode,secret,guesses,current,selectedSlot,undoStack,
+        version:1,challengeDate,practiceMode,secret,guesses,current,selectedSlot,undoStack,redoStack,
         elapsedMs:elapsedMilliseconds()
       }));
     } catch (e) {}
@@ -786,6 +803,7 @@ newGame();
     current = Array.isArray(saved.current) && saved.current.length === 4 ? saved.current : Array(4).fill(null);
     selectedSlot = Number.isInteger(saved.selectedSlot) ? saved.selectedSlot : null;
     undoStack = Array.isArray(saved.undoStack) ? saved.undoStack : [];
+    redoStack = Array.isArray(saved.redoStack) ? saved.redoStack : [];
     heading.textContent = practiceMode ? practiceHeading : dailyHeading;
     shareButton.hidden = practiceMode;
     returnDailyButton.hidden = !practiceMode;
@@ -883,6 +901,7 @@ newGame();
     current = Array(4).fill(null);
     selectedSlot = null;
     undoStack = [];
+    redoStack = [];
     document.getElementById('modal').classList.remove('show');
     shareButton.hidden = false;
     returnDailyButton.hidden = true;
@@ -914,6 +933,7 @@ newGame();
     current = Array(4).fill(null);
     selectedSlot = null;
     undoStack = [];
+    redoStack = [];
     document.getElementById('modal').classList.remove('show');
     shareButton.hidden = true;
     returnDailyButton.hidden = false;
@@ -955,6 +975,7 @@ newGame();
     current = Array(4).fill(null);
     selectedSlot = null;
     undoStack = [];
+    redoStack = [];
     render();
     originalEndGame(dailySnapshot.win);
     document.getElementById('elapsedTime').textContent = 'Time: ' + dailySnapshot.elapsed;
