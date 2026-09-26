@@ -351,6 +351,8 @@ const pauseButton=document.getElementById('pauseBtn'), pauseOverlay=document.get
 const instructionsButton=document.getElementById('instructionsBtn'), instructionsModal=document.getElementById('instructionsModal'), closeInstructionsButton=document.getElementById('closeInstructionsBtn');
 const pauseInstructionsButton=document.getElementById('pauseInstructionsBtn');
 let instructionsPausedGame=false;
+let ignorePauseUntil=0;
+const resumeGuardStorageKey='colorform.resume.basic.v1';
 
 function elapsedMilliseconds(){
   return Math.max(0,(pausedAt||Date.now())-startedAt-totalPausedMs);
@@ -366,7 +368,7 @@ function resetPause(){
   pauseButton.disabled=false;
 }
 function pauseGame(){
-  if(gameOver||pausedAt)return;
+  if(gameOver||pausedAt||Date.now()<ignorePauseUntil)return;
   pausedAt=Date.now();
   pauseOverlay.hidden=false;
   document.body.classList.add('game-paused');
@@ -374,11 +376,14 @@ function pauseGame(){
 }
 function resumeGame(){
   if(!pausedAt)return;
-  totalPausedMs+=Date.now()-pausedAt;
+  const now=Date.now();
+  totalPausedMs+=now-pausedAt;
   pausedAt=0;
   pauseOverlay.hidden=true;
   document.body.classList.remove('game-paused');
-  pauseButton.focus();
+  ignorePauseUntil=now+1500;
+  try { sessionStorage.setItem(resumeGuardStorageKey,String(now+5000)); } catch (e) {}
+  resumeButton.blur();
 }
 function openInstructions(){
   if(!instructionsModal.hidden)return;
@@ -811,13 +816,27 @@ newGame();
     document.getElementById('modal').classList.remove('show');
     startedAt = Date.now() - Math.max(0,Number(saved.elapsedMs) || 0);
     totalPausedMs = 0;
-    pausedAt = Date.now();
     gameOver = false;
     pauseButton.disabled = false;
-    pauseOverlay.hidden = false;
-    document.body.classList.add('game-paused');
+    let immediateResume = false;
+    try {
+      immediateResume = Number(sessionStorage.getItem(resumeGuardStorageKey) || 0) > Date.now();
+      sessionStorage.removeItem(resumeGuardStorageKey);
+    } catch (e) {}
+    if(immediateResume){
+      pausedAt = 0;
+      pauseOverlay.hidden = true;
+      document.body.classList.remove('game-paused');
+      ignorePauseUntil = Date.now()+1000;
+    }else{
+      pausedAt = Date.now();
+      pauseOverlay.hidden = false;
+      document.body.classList.add('game-paused');
+    }
     render();
-    status.textContent = 'Game restored. Press RESUME when you are ready.';
+    status.textContent = immediateResume
+      ? 'Game restored.'
+      : 'Game restored. Press RESUME when you are ready.';
     return true;
   };
 
