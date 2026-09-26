@@ -242,6 +242,9 @@ body{height:100dvh;display:flex;align-items:center}
 .actions .submit{background:linear-gradient(135deg,#20d8cf,#0798bd);border-color:#7ff5ec;color:#07151a;box-shadow:0 8px 20px #09bfd63d}
 .actions .submit:hover:not(:disabled){background:linear-gradient(135deg,#48e8df,#12afd0);border-color:#b2fff8}
 .undo-icon,.redo-icon{display:inline-block;font-size:1.65em;line-height:0;vertical-align:-.12em;margin-right:.12em;font-weight:900}
+.submit-wrap{position:relative;flex:1;display:flex;min-width:0}.submit-wrap .submit{width:100%;flex:1}.validation-popover{position:absolute;z-index:8;inset:2px;display:grid;grid-template-columns:repeat(4,10px);grid-template-rows:auto 10px;align-content:center;justify-content:center;gap:2px 3px;padding:1px 3px;background:linear-gradient(135deg,#17243a,#0e1928);border:1px solid #607697;border-radius:7px;box-shadow:inset 0 0 0 1px #ffffff12;pointer-events:none}.validation-title{grid-column:1/-1;color:#dbe8f8;font-size:6px;font-weight:950;line-height:1;letter-spacing:.04em;text-align:center;white-space:nowrap}.validation-popover[hidden]{display:none}.validation-box{width:10px;height:10px;border-radius:3px;border:1px solid #ff8997;background:#c52d43;box-shadow:inset 0 0 0 1px #5e101d}.validation-box.valid{border-color:#8cffae;background:#22ad58;box-shadow:inset 0 0 0 1px #075c29}.actions .submit.ready{border-color:#8cffae!important;box-shadow:0 0 0 3px #38dc7544,0 0 16px #38dc7588!important}
+@keyframes placeholderAttention{0%{transform:translateX(0) rotate(0);box-shadow:0 0 0 0 #ffcf5c00}12%{transform:translateX(-4px) rotate(-2deg);box-shadow:0 0 0 3px #ffcf5caa,0 0 18px #ffcf5c99}25%{transform:translateX(4px) rotate(2deg)}38%{transform:translateX(-3px) rotate(-1.5deg)}52%{transform:translateX(3px) rotate(1.5deg)}68%{transform:translateX(-2px) rotate(-1deg)}84%{transform:translateX(2px) rotate(1deg)}100%{transform:translateX(0) rotate(0);box-shadow:0 0 0 0 #ffcf5c00}}
+.guess-piece.placeholder-alert{position:relative;z-index:3;animation:placeholderAttention .9s ease-out}
 </style>
 </head>
 <body>
@@ -262,7 +265,7 @@ body{height:100dvh;display:flex;align-items:center}
       <section class="pool">
         <h2>SELECT YOUR GUESS</h2>
         <div class="tiles" id="tiles"></div>
-        <div class="actions"><button id="undoBtn" disabled><span class="undo-icon" aria-hidden="true">↶</span> UNDO</button><button id="redoBtn" disabled><span class="redo-icon" aria-hidden="true">↷</span> REDO</button><button id="clearBtn">CLEAR GUESS</button><button class="submit" id="submitBtn" disabled>SUBMIT GUESS</button></div>
+        <div class="actions"><button id="undoBtn" disabled><span class="undo-icon" aria-hidden="true">↶</span> UNDO</button><button id="redoBtn" disabled><span class="redo-icon" aria-hidden="true">↷</span> REDO</button><button id="clearBtn">CLEAR GUESS</button><div class="submit-wrap"><div class="validation-popover" id="validationPopover" aria-label="Guess readiness by position" hidden><span class="validation-title">GUESS READY?</span><i class="validation-box"></i><i class="validation-box"></i><i class="validation-box"></i><i class="validation-box"></i></div><button class="submit" id="submitBtn" disabled>SUBMIT GUESS</button></div></div>
         <div class="status" id="status">Click four pieces from the pool to build your guess.</div>
       </section>
       <aside class="rules">
@@ -345,7 +348,7 @@ const pieces=[];
 colors.forEach(([color,hex])=>shapes.forEach(shape=>pieces.push({color,hex,shape})));
 const shapePlaceholders=shapes.map(shape=>({color:'any color',hex:'#4d535a',shape,placeholder:true,placeholderType:'shape'}));
 const colorPlaceholders=colors.map(([color,hex])=>({color,hex,shape:'color-placeholder',placeholder:true,placeholderType:'color'}));
-let secret=[], guesses=[], current=Array(4).fill(null), selectedSlot=null, dragFrom=null, lastDrop=0, startedAt=0, pausedAt=0, totalPausedMs=0, gameOver=false, undoStack=[], redoStack=[], clockStarted=false;
+let secret=[], guesses=[], current=Array(4).fill(null), selectedSlot=null, dragFrom=null, lastDrop=0, startedAt=0, pausedAt=0, totalPausedMs=0, gameOver=false, undoStack=[], redoStack=[], clockStarted=false, highlightedPlaceholderSlot=null;
 const board=document.getElementById('board'), tiles=document.getElementById('tiles'), status=document.getElementById('status');
 const pauseButton=document.getElementById('pauseBtn'), pauseOverlay=document.getElementById('pauseOverlay'), resumeButton=document.getElementById('resumeBtn');
 const instructionsButton=document.getElementById('instructionsBtn'), instructionsModal=document.getElementById('instructionsModal'), closeInstructionsButton=document.getElementById('closeInstructionsBtn');
@@ -360,10 +363,7 @@ function elapsedMilliseconds(){
 }
 function startClockOnActivity(){
   if(clockStarted||gameOver||!secret.length)return;
-  clockStarted=true;
-  startedAt=Date.now();
-  pausedAt=0;
-  totalPausedMs=0;
+  clockStarted=true;startedAt=Date.now();pausedAt=0;totalPausedMs=0;
 }
 function resetPause(){
   pausedAt=0;
@@ -455,6 +455,7 @@ function select(p,i){
   }
   recordUndo();
   current[target]=p;
+  highlightedPlaceholderSlot=p.placeholder?target:null;
   selectedSlot=null;
   document.querySelectorAll('.tile').forEach(x=>x.classList.remove('selected'));
   render();
@@ -474,6 +475,7 @@ function clearGuess(){
   if(!current.some(Boolean))return;
   recordUndo();
   current=Array(4).fill(null);
+  highlightedPlaceholderSlot=null;
   selectedSlot=null;
   render();
   status.textContent='Guess cleared. Select a position, then choose a piece.';
@@ -482,6 +484,7 @@ function removeGuess(i){
   if(i<0||i>3||!current[i])return;
   recordUndo();
   current[i]=null;
+  highlightedPlaceholderSlot=null;
   selectedSlot=i;
   render();
   status.textContent=`Position ${i+1} cleared and selected. Choose a replacement.`;
@@ -490,6 +493,7 @@ function moveGuess(from,to){
   if(from===to||from<0||from>3||to<0||to>3||!current[from])return;
   recordUndo();
   [current[from],current[to]]=[current[to],current[from]];
+  highlightedPlaceholderSlot=null;
   selectedSlot=to;
   render();
   status.textContent=`Piece moved to position ${to+1}.`;
@@ -616,6 +620,7 @@ function submit(){
   const g=[...current],fb=score(g);
   guesses.push({g,fb});
   current=Array(4).fill(null);
+  highlightedPlaceholderSlot=null;
   selectedSlot=null;
   undoStack=[];
   redoStack=[];
@@ -644,7 +649,9 @@ function roundBlock(r){
   for(let i=0;i<4;i++){
     const c=document.createElement('div');
     const active=r===guesses.length&&!data,editable=active&&!!guess[i];
-    c.className='guess-piece '+(active?'current ':'')+(editable?'editable ':'')+(active&&selectedSlot===i?'slot-selected':'');
+    const placeholderAlert=active&&i===highlightedPlaceholderSlot&&guess[i]?.placeholder;
+    c.className='guess-piece '+(active?'current ':'')+(editable?'editable ':'')+(active&&selectedSlot===i?'slot-selected ':'')+(placeholderAlert?'placeholder-alert':'');
+    if(placeholderAlert)c.addEventListener('animationend',()=>{if(highlightedPlaceholderSlot===i)highlightedPlaceholderSlot=null;c.classList.remove('placeholder-alert');},{once:true});
     if(guess[i]){
       c.appendChild(makeShape(guess[i]));
       if(active)addRemoveControl(c,i);
@@ -674,6 +681,11 @@ function render(){
   board.innerHTML='';
   for(let r=0;r<6;r++)board.appendChild(roundBlock(r));
   document.getElementById('submitBtn').disabled=current.some(x=>!x||x.placeholder);
+  const hasEntries=current.some(Boolean),allValid=current.every(x=>x&&!x.placeholder);
+  const validationPopover=document.getElementById('validationPopover');
+  validationPopover.hidden=!hasEntries||allValid;
+  validationPopover.querySelectorAll('.validation-box').forEach((box,index)=>box.classList.toggle('valid',!!current[index]&&!current[index].placeholder));
+  document.getElementById('submitBtn').classList.toggle('ready',allValid);
   document.getElementById('undoBtn').disabled=undoStack.length===0;
   document.getElementById('redoBtn').disabled=redoStack.length===0;
 }
@@ -688,6 +700,7 @@ function undoGuess(){
   redoStack.push({current:[...current],selectedSlot});
   if(redoStack.length>50)redoStack.shift();
   current=[...previous.current];
+  highlightedPlaceholderSlot=null;
   selectedSlot=previous.selectedSlot;
   render();
   status.textContent=undoStack.length?'Last change undone. You can undo again.':'Last change undone.';
@@ -698,6 +711,7 @@ function redoGuess(){
   undoStack.push({current:[...current],selectedSlot});
   if(undoStack.length>50)undoStack.shift();
   current=[...next.current];
+  highlightedPlaceholderSlot=null;
   selectedSlot=next.selectedSlot;
   render();
   status.textContent=redoStack.length?'Change restored. You can redo again.':'Change restored.';
@@ -833,9 +847,7 @@ newGame();
       sessionStorage.removeItem(resumeGuardStorageKey);
     } catch (e) {}
     if(!clockStarted){
-      pausedAt = 0;
-      pauseOverlay.hidden = true;
-      document.body.classList.remove('game-paused');
+      pausedAt=0;pauseOverlay.hidden=true;document.body.classList.remove('game-paused');
     }else if(immediateResume){
       pausedAt = 0;
       pauseOverlay.hidden = true;
@@ -847,9 +859,7 @@ newGame();
       document.body.classList.add('game-paused');
     }
     render();
-    status.textContent = !clockStarted
-      ? 'Ready when you are—the clock starts with your first action.'
-      : immediateResume ? 'Game restored.' : 'Game restored. Press RESUME when you are ready.';
+    status.textContent = !clockStarted ? 'Ready when you are—the clock starts with your first action.' : immediateResume ? 'Game restored.' : 'Game restored. Press RESUME when you are ready.';
     return true;
   };
 
@@ -932,6 +942,7 @@ newGame();
     secret = solutionFor(challengeDate);
     guesses = [];
     current = Array(4).fill(null);
+    highlightedPlaceholderSlot = null;
     selectedSlot = null;
     undoStack = [];
     redoStack = [];
@@ -965,6 +976,7 @@ newGame();
     secret = Array.from({length:4},()=>pieces[Math.floor(Math.random()*pieces.length)]);
     guesses = [];
     current = Array(4).fill(null);
+    highlightedPlaceholderSlot = null;
     selectedSlot = null;
     undoStack = [];
     redoStack = [];
