@@ -345,7 +345,7 @@ const pieces=[];
 colors.forEach(([color,hex])=>shapes.forEach(shape=>pieces.push({color,hex,shape})));
 const shapePlaceholders=shapes.map(shape=>({color:'any color',hex:'#4d535a',shape,placeholder:true,placeholderType:'shape'}));
 const colorPlaceholders=colors.map(([color,hex])=>({color,hex,shape:'color-placeholder',placeholder:true,placeholderType:'color'}));
-let secret=[], guesses=[], current=Array(4).fill(null), selectedSlot=null, dragFrom=null, lastDrop=0, startedAt=0, pausedAt=0, totalPausedMs=0, gameOver=false, undoStack=[], redoStack=[];
+let secret=[], guesses=[], current=Array(4).fill(null), selectedSlot=null, dragFrom=null, lastDrop=0, startedAt=0, pausedAt=0, totalPausedMs=0, gameOver=false, undoStack=[], redoStack=[], clockStarted=false;
 const board=document.getElementById('board'), tiles=document.getElementById('tiles'), status=document.getElementById('status');
 const pauseButton=document.getElementById('pauseBtn'), pauseOverlay=document.getElementById('pauseOverlay'), resumeButton=document.getElementById('resumeBtn');
 const instructionsButton=document.getElementById('instructionsBtn'), instructionsModal=document.getElementById('instructionsModal'), closeInstructionsButton=document.getElementById('closeInstructionsBtn');
@@ -355,7 +355,15 @@ let ignorePauseUntil=0;
 const resumeGuardStorageKey='colorform.resume.basic.v1';
 
 function elapsedMilliseconds(){
+  if(!clockStarted)return 0;
   return Math.max(0,(pausedAt||Date.now())-startedAt-totalPausedMs);
+}
+function startClockOnActivity(){
+  if(clockStarted||gameOver||!secret.length)return;
+  clockStarted=true;
+  startedAt=Date.now();
+  pausedAt=0;
+  totalPausedMs=0;
 }
 function resetPause(){
   pausedAt=0;
@@ -790,7 +798,7 @@ newGame();
     if (gameOver || !secret.length) return;
     try {
       localStorage.setItem(progressStorageKey,JSON.stringify({
-        version:1,challengeDate,practiceMode,secret,guesses,current,selectedSlot,undoStack,redoStack,
+        version:1,challengeDate,practiceMode,secret,guesses,current,selectedSlot,undoStack,redoStack,clockStarted,
         elapsedMs:elapsedMilliseconds()
       }));
     } catch (e) {}
@@ -809,12 +817,13 @@ newGame();
     selectedSlot = Number.isInteger(saved.selectedSlot) ? saved.selectedSlot : null;
     undoStack = Array.isArray(saved.undoStack) ? saved.undoStack : [];
     redoStack = Array.isArray(saved.redoStack) ? saved.redoStack : [];
+    clockStarted = guesses.length>0 || current.some(Boolean) || undoStack.length>0 || redoStack.length>0;
     heading.textContent = practiceMode ? practiceHeading : dailyHeading;
     shareButton.hidden = practiceMode;
     returnDailyButton.hidden = !practiceMode;
     againButton.textContent = practiceMode ? 'PLAY ANOTHER RANDOM' : 'PLAY RANDOM PUZZLE';
     document.getElementById('modal').classList.remove('show');
-    startedAt = Date.now() - Math.max(0,Number(saved.elapsedMs) || 0);
+    startedAt = clockStarted ? Date.now() - Math.max(0,Number(saved.elapsedMs) || 0) : 0;
     totalPausedMs = 0;
     gameOver = false;
     pauseButton.disabled = false;
@@ -823,7 +832,11 @@ newGame();
       immediateResume = Number(sessionStorage.getItem(resumeGuardStorageKey) || 0) > Date.now();
       sessionStorage.removeItem(resumeGuardStorageKey);
     } catch (e) {}
-    if(immediateResume){
+    if(!clockStarted){
+      pausedAt = 0;
+      pauseOverlay.hidden = true;
+      document.body.classList.remove('game-paused');
+    }else if(immediateResume){
       pausedAt = 0;
       pauseOverlay.hidden = true;
       document.body.classList.remove('game-paused');
@@ -834,9 +847,9 @@ newGame();
       document.body.classList.add('game-paused');
     }
     render();
-    status.textContent = immediateResume
-      ? 'Game restored.'
-      : 'Game restored. Press RESUME when you are ready.';
+    status.textContent = !clockStarted
+      ? 'Ready when you are—the clock starts with your first action.'
+      : immediateResume ? 'Game restored.' : 'Game restored. Press RESUME when you are ready.';
     return true;
   };
 
@@ -913,7 +926,8 @@ newGame();
     dailySnapshot = null;
     heading.textContent = dailyHeading;
     challengeDate = dateKey();
-    startedAt = Date.now();
+    startedAt = 0;
+    clockStarted = false;
     resetPause();
     secret = solutionFor(challengeDate);
     guesses = [];
@@ -945,7 +959,8 @@ newGame();
     clearProgress();
     practiceMode = true;
     heading.textContent = practiceHeading;
-    startedAt = Date.now();
+    startedAt = 0;
+    clockStarted = false;
     resetPause();
     secret = Array.from({length:4},()=>pieces[Math.floor(Math.random()*pieces.length)]);
     guesses = [];
@@ -1041,11 +1056,15 @@ newGame();
 
   newGame();
   const checkDate = () => {
-    if (dateKey() !== challengeDate) newGame();
+    if (!practiceMode && dateKey() !== challengeDate) newGame();
   };
   setInterval(checkDate,1000);
   setInterval(saveProgress,1000);
   window.addEventListener('pagehide',saveProgress);
+  board.addEventListener('pointerdown',startClockOnActivity,true);
+  board.addEventListener('keydown',startClockOnActivity,true);
+  tiles.addEventListener('pointerdown',startClockOnActivity,true);
+  tiles.addEventListener('keydown',startClockOnActivity,true);
   document.addEventListener('visibilitychange',() => {
     if (document.hidden) saveProgress();
     else checkDate();
